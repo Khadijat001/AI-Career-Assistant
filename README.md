@@ -1,8 +1,9 @@
-#AI Career Assistant
+# AI Career Assistant
 
 **AI-powered CV analysis and career support tool built with Python, Streamlit, and Gemini.**
 
 **Author:** Khadijat Abubakar
+
 **Course:** MIT Universal AI Course
 
 ## About the Project
@@ -236,6 +237,8 @@ Possible future versions could include:
 ## Author
 
 **Khadijat Abubakar**
+
+**Data Scientist / ML Engineer**
 
 Built with Python, Streamlit, and Gemini.
 
