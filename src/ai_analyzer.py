@@ -1,6 +1,7 @@
-from google import genai
+from openai import OpenAI
 from dotenv import load_dotenv
 import os
+import time
 
 
 # ==========================================
@@ -11,11 +12,21 @@ load_dotenv()
 
 
 # ==========================================
-# GEMINI CLIENT
+# HUGGING FACE CLIENT
 # ==========================================
 
-client = genai.Client(
-    api_key=os.getenv("GEMINI_API_KEY")
+hf_token = os.getenv("HF_TOKEN")
+
+if not hf_token:
+    raise ValueError(
+        "HF_TOKEN is not configured. "
+        "Please add your Hugging Face token to your .env file "
+        "when running locally or Streamlit Secrets when deployed."
+    )
+
+client = OpenAI(
+    base_url="https://router.huggingface.co/v1",
+    api_key=hf_token
 )
 
 
@@ -51,6 +62,7 @@ IMPORTANT TRUTHFULNESS RULES
 2. Use ONLY information explicitly provided in the CV.
 
 3. Never invent:
+
 - skills
 - work experience
 - certifications
@@ -68,6 +80,7 @@ IMPORTANT TRUTHFULNESS RULES
 another related skill.
 
 For example:
+
 - Python is not the same as SQL.
 - Data analysis is not the same as financial risk management.
 - Teaching is not the same as customer service.
@@ -88,20 +101,23 @@ be considered to have digital marketing experience.
 A candidate with software development experience should not
 automatically be considered to have cybersecurity experience.
 
-A candidate with communication experience should not automatically
-be considered to have sales experience.
+A candidate with communication experience should not
+automatically be considered to have sales experience.
 
 6. For every important job requirement, classify the evidence as:
 
 CLEARLY DEMONSTRATED
+
 The CV directly shows the required skill, qualification,
 responsibility, tool, or experience.
 
 TRANSFERABLE
+
 The CV does not show the exact requirement, but contains
 genuinely related skills or experience that may transfer.
 
 NOT DEMONSTRATED
+
 There is no supporting evidence in the CV.
 
 7. A transferable skill must be supported by actual evidence
@@ -151,14 +167,17 @@ EXPERIENCE CLASSIFICATION
 Use the following definitions consistently throughout the analysis.
 
 CLEARLY DEMONSTRATED:
+
 The candidate's CV explicitly shows the required skill,
 qualification, tool, responsibility, or experience.
 
 TRANSFERABLE:
+
 The exact requirement is not demonstrated, but the CV contains
 a related skill or experience that could reasonably transfer.
 
 NOT DEMONSTRATED:
+
 The CV contains no sufficient evidence of the requirement.
 
 IMPORTANT:
@@ -199,29 +218,41 @@ The analysis should NOT say:
 Instead:
 
 Data Analysis
+
 Status: TRANSFERABLE
+
 Evidence: The CV demonstrates data analysis, which may support
 data-driven decision making, but the CV does not demonstrate
 digital marketing experience.
 
 SEO
+
 Status: NOT DEMONSTRATED
+
 Evidence: Not clearly shown in the CV.
 
 Google Ads
+
 Status: NOT DEMONSTRATED
+
 Evidence: Not clearly shown in the CV.
 
 Meta Ads
+
 Status: NOT DEMONSTRATED
+
 Evidence: Not clearly shown in the CV.
 
 Email Marketing
+
 Status: NOT DEMONSTRATED
+
 Evidence: Not clearly shown in the CV.
 
 Conversion Rate Optimization
+
 Status: NOT DEMONSTRATED
+
 Evidence: Not clearly shown in the CV.
 
 
@@ -250,6 +281,7 @@ Give a short 2–3 sentence summary explaining how the CV relates
 to the job.
 
 Mention:
+
 - the main areas where the candidate matches
 - important gaps
 - relevant transferable skills, if any
@@ -272,7 +304,9 @@ Evidence:
 The Status must be EXACTLY one of:
 
 CLEARLY DEMONSTRATED
+
 TRANSFERABLE
+
 NOT DEMONSTRATED
 
 Only use CLEARLY DEMONSTRATED when the CV directly supports
@@ -315,6 +349,7 @@ Identify important experience requirements that are not currently
 demonstrated in the CV.
 
 Include:
+
 - required years of experience
 - industry experience
 - specific role experience
@@ -369,6 +404,7 @@ Provide 5 realistic interview questions based on the job
 description and the candidate's actual background.
 
 Include a mixture of:
+
 - technical questions where relevant
 - job-specific questions
 - questions about projects or internships
@@ -426,13 +462,86 @@ still need to develop.
 Return ONLY the analysis.
 """
 
+
     # ==========================================
-    # GENERATE ANALYSIS
+    # GENERATE ANALYSIS WITH RETRY
     # ==========================================
 
-    response = client.models.generate_content(
-        model="gemini-3.1-flash-lite",
-        contents=prompt
+    max_retries = 4
+
+    for attempt in range(max_retries):
+
+        try:
+
+            response = client.chat.completions.create(
+                model="openai/gpt-oss-120b",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ]
+            )
+
+            # Make sure Hugging Face actually returned text
+            if response and response.choices:
+
+                text = response.choices[0].message.content
+
+                if text:
+                    return text
+
+            return (
+                "### Analysis Error\n\n"
+                "Hugging Face returned an empty response. "
+                "Please try again."
+            )
+
+        except Exception as e:
+
+            error_message = str(e)
+
+            # ==========================================
+            # RETRY TEMPORARY API SERVER ERRORS
+            # ==========================================
+
+            if "503" in error_message or "UNAVAILABLE" in error_message:
+
+                if attempt < max_retries - 1:
+
+                    # 2 seconds, 4 seconds, 8 seconds
+                    wait_time = 2 ** attempt
+
+                    time.sleep(wait_time)
+
+                    continue
+
+                # All retries failed
+                return (
+                    "### AI Service Temporarily Unavailable\n\n"
+                    "The AI service could not process the request after "
+                    f"{max_retries} attempts.\n\n"
+                    f"Technical error:\n\n`{error_message}`"
+                )
+
+            # ==========================================
+            # OTHER API ERRORS
+            # ==========================================
+
+            return (
+                "### Analysis Error\n\n"
+                "An error occurred while analyzing your CV. "
+                "Please try again.\n\n"
+                f"Error: {error_message}"
+            )
+
+
+    # ==========================================
+    # FINAL FALLBACK
+    # ==========================================
+
+    return (
+        "### Analysis Error\n\n"
+        "The analysis could not be completed. "
+        "Please try again."
     )
-
-    return response.text
